@@ -1,5 +1,20 @@
 # StudySync
 
+StudySync helps students find, join, and run study groups that match their
+courses, schedule, and interests.
+
+**Features:**
+- **Explore Groups** — search and filter study groups by subject, keyword, and availability
+- **My Groups** — manage the groups you've joined, or create a new one
+- **Group Chat** — real-time messaging within a study group, backed by a distributed (Pub/Sub) pipeline for durability and low-latency delivery
+- **User Profile** — academic info, focus subjects, and weekly availability
+- **AI Recommendations** — personalized group matches generated via Vertex AI (Gemini), based on your interests and schedule
+- **Account Settings** — manage identity and security preferences
+- **Onboarding** — a guided sign-up flow covering account details, academic profile, interests, and availability
+
+Built with Streamlit, Supabase (auth + chat), Google BigQuery (study-group
+data), and Google Cloud Pub/Sub (chat pipeline), deployed on Cloud Run.
+
 ## Our Team: Code and Conquer
 
 - Saurab Gyawali
@@ -38,94 +53,32 @@ Save the file with `Ctrl+X`, `Y`, `Enter`.
 
 **Note:** Do not commit `secrets.toml` to the repository. It is already added to `.gitignore`.
 
-# Distributed Chat Setup (Pub/Sub)
+# Chat Setup (Pub/Sub)
 
-Group chat has two independent paths through Pub/Sub — a durable write
-path and a low-latency read path — instead of the app reading/writing
-Supabase directly:
+Group chat runs through Pub/Sub instead of reading/writing Supabase directly:
 
 ```
-WRITE (durability):
-send_message()  ──publish──▶  Pub/Sub topic  ──push (HTTP)──▶  persist_worker.py
-(chat_handler.py)          "chat-messages"                  (separate Cloud Run service)
-                            ordering_key=group_id             idempotent upsert into
-                                   │                           Supabase `messages`
-                                   └──▶ dead-letter topic (after N failures)
-
-READ (low-latency delivery):
-                            Pub/Sub topic  ──fan-out sub──▶  chat_subscriber.py
-                            "chat-messages"  (1 per app       (in-process, per app instance)
-                                              instance)                │
-                                                                        ▼
-                                              group_chat.py's fragment drains
-                                              this in-memory buffer every 0.3s,
-                                              with a Postgres reconciliation
-                                              check every 10s as a backstop
+send_message() ──▶ Pub/Sub topic ──▶ persist_worker.py ──▶ Supabase `messages`
+              (chat_publisher.py)         │        (durable write, Cloud Run service)
+                                          └──▶ chat_subscriber.py ──▶ group_chat.py UI
+                                               (fast in-memory buffer, low-latency read)
 ```
 
-- `src/backend/chat_publisher.py` — publishes to the topic (used by
-  `send_message()`)
-- `src/worker/persist_worker.py` — a small Flask app that Pub/Sub calls
-  directly over HTTP (a push subscription, not a pull loop — fits Cloud
-  Run's scale-to-zero model with no idle cost); the only thing that
-  actually writes to the `messages` table
-- `src/backend/chat_subscriber.py` — a background, in-process subscriber
-  (one per running app instance, via a uniquely-named fan-out subscription
-  it creates and deletes itself) that buffers incoming messages in memory
-  for `group_chat.py`'s fragment to read — this is what makes receiving a
-  message push-based instead of poll-based. Degrades gracefully: if no
-  Pub/Sub broker is reachable, `get_chat_subscriber()` returns `None` and
-  the fragment falls back to Postgres-only polling, same as before this
-  file existed.
-- `migrations/001_add_client_msg_id.sql` — run this once against the
-  Supabase project before deploying the worker; its idempotent upsert
-  depends on the `UNIQUE` constraint it adds
-- `scripts/setup_pubsub.sh` — provisions the real topic/push
-  subscription/DLQ for the write path. **Not run automatically.** The read
-  path's fan-out subscription needs no separate provisioning — each app
-  instance creates and tears down its own at runtime.
+- `src/backend/chat_publisher.py` — publishes each message
+- `src/worker/persist_worker.py` — Flask service Pub/Sub pushes to; the only thing that writes to `messages`
+- `src/backend/chat_subscriber.py` — background subscriber that delivers messages to the UI quickly, without polling Postgres
+- `migrations/001_add_client_msg_id.sql` — run once against Supabase before deploying the worker
+- `scripts/setup_pubsub.sh` — one-time manual setup of the topic/subscriptions (not run automatically)
 
-**Streamlit constraint worth knowing**: there's no supported way to force
-a *different* browser session's rerun from a background thread, so
-`group_chat.py`'s fragment still redraws on a timer (`FAST_POLL_INTERVAL_SECONDS
-= 0.3`) rather than a true push-triggered redraw — what changed is that the
-timer now reads a cheap in-memory buffer fed by Pub/Sub instead of hitting
-Postgres on every tick, so the interval could shrink from 2s to 0.3s
-without adding real DB load.
-
-**Important — this changes local dev requirements.** `chat_publisher.py`
-and `chat_subscriber.py` both construct Pub/Sub clients, and that
-resolves real GCP credentials unless `PUBSUB_EMULATOR_HOST` is set. Since
-`app.py` imports the chat pages unconditionally, **the whole app will fail
-to start locally** unless you either have real GCP Application Default
-Credentials configured, or point at the local emulator:
+**Local dev**: the app talks to Pub/Sub at startup, so it needs `PUBSUB_EMULATOR_HOST` set or it won't start:
 
 ```bash
-export PUBSUB_EMULATOR_HOST=localhost:8085   # needs no emulator actually
-export GCP_PROJECT_ID=test-project           # running for the app to start
+export PUBSUB_EMULATOR_HOST=localhost:8085
+export GCP_PROJECT_ID=test-project
 streamlit run src/app.py --server.port 8080
 ```
 
-Note: `chat_subscriber.py`'s `create_subscription` call itself needs an
-*actually reachable* broker (real GCP or a running emulator) to succeed —
-if it isn't reachable, it fails fast (~1s, not the client library's ~60s
-default) and `get_chat_subscriber()` returns `None`, which is a supported,
-tested fallback (see `tests/chat_subscriber_test.py`), not a crash.
-
-`persist_worker.py` has no such requirement — it's a plain Flask app, run
-it directly for local testing:
-
-```bash
-SUPABASE_URL=... SUPABASE_KEY=... python3 src/worker/persist_worker.py
-# then POST a Pub/Sub-shaped envelope at it — see push_envelope() in
-# tests/persist_worker_test.py for the exact shape
-```
-
-For automated tests, everything under `tests/chat_*` and
-`tests/persist_worker_test.py` mocks the Pub/Sub client / POSTs directly to
-Flask's test client — no live Pub/Sub, emulator, or deployed worker needed
-to run them. `tests/distributed_chat_integration_test.py` chains the real
-producer to the real consumer to verify they agree on the wire format.
+Tests don't need any of this — they mock Pub/Sub entirely.
 
 # How to Run the Streamlit App
 ## Step 1: Clone the repository.
