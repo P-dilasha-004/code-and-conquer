@@ -4,18 +4,23 @@ name: Cloud Run Continuous Deployment
 
 on:
   push:
-    # TODO: change 'none' to 'main' to enable the workflow to run
-    branches: 'main'
+    # Detached from the team's shared deployment on purpose — this fork
+    # (P-dilasha-004/code-and-conquer) should never auto-deploy to the
+    # shared daniel-reyes-uprm project. Re-enable ('none' -> 'main', or a
+    # dedicated branch of your choosing) only after filling in your own
+    # setup.sh output below, once PERSONAL_DEPLOY.md step 1 is done.
+    branches: 'none'
   release:
     types: [published]
 
 env:
-  # TODO: Paste output from setup.sh below.
-  PROJECT_ID: 'daniel-reyes-uprm'
-  SERVICE_NAME: 'study-group-finder'
+  # TODO: Paste output from YOUR OWN setup.sh run below (see
+  # PERSONAL_DEPLOY.md) — do not reuse the team's daniel-reyes-uprm values.
+  PROJECT_ID: 'TODO-your-own-gcp-project-id'
+  SERVICE_NAME: 'TODO-your-own-service-name'
   SERVICE_REGION: 'us-central1'
-  SERVICE_ACCOUNT: '828411740843-compute@developer.gserviceaccount.com'
-  WORKLOAD_IDENTITY_PROVIDER: 'projects/828411740843/locations/global/workloadIdentityPools/github-provider/providers/github-project-repo'
+  SERVICE_ACCOUNT: 'TODO-your-own-project-number-compute@developer.gserviceaccount.com'
+  WORKLOAD_IDENTITY_PROVIDER: 'TODO-your-own-workload-identity-provider'
 
 jobs:
   py-checks:

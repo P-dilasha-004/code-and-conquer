@@ -2,4 +2,5 @@ streamlit
 google-cloud-bigquery
 db-dtypes
 google-cloud-aiplatform
+google-cloud-pubsub
 supabase

@@ -1,6 +1,9 @@
 ### VARIABLES TO CHANGE - START
-PROJECT_ID=daniel-reyes-uprm
-SERVICE_NAME=study-group-finder
+# Detached from the team's shared project on purpose — fill in your own
+# GCP project/service name here (see PERSONAL_DEPLOY.md). Do not reuse
+# daniel-reyes-uprm / study-group-finder; that's the team's live app.
+PROJECT_ID=TODO-your-own-gcp-project-id
+SERVICE_NAME=TODO-your-own-service-name
 ### VARIABLES TO CHANGE - END
 
 # ----------- Manual Deployment ------------ #

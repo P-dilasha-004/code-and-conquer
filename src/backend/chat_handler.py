@@ -2,6 +2,8 @@ import os
 import streamlit as st
 from supabase import create_client, Client
 
+from backend.chat_publisher import publish_message
+
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
@@ -65,17 +67,20 @@ def add_user_to_chat(group_id: str, user_id: str) -> None:
         raise e
 
 
-def send_message(group_id: str, sender_id: str, content: str) -> None:
-    """Insert a new message into the `messages` table for a group chat."""
+def send_message(group_id: str, sender_id: str, content: str) -> str:
+    """Publish a new message onto the chat-messages Pub/Sub topic instead of
+    writing to Supabase directly. persist_worker.py (src/worker/) is the
+    only thing that writes to the `messages` table now — this function just
+    hands the message to the broker and returns.
+
+    Returns the generated client_msg_id (useful for correlating this send
+    with the row persist_worker eventually writes).
+    """
     try:
-        supabase.table("messages").insert({
-            "group_id": group_id,
-            "sender_id": sender_id,
-            "content": content,
-        }).execute()
+        return publish_message(group_id, sender_id, content)
 
     except Exception as e:
-        print(f"Supabase send_message failed: {e}")
+        print(f"Pub/Sub publish_message failed: {e}")
         raise e
 
 

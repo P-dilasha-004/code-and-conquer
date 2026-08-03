@@ -1,8 +1,15 @@
 ### VARIABLES TO CHANGE - START
-PROJECT_ID=daniel-reyes-uprm
-PROJECT_NUMBER=828411740843
-SERVICE_NAME=study-group-finder
-GITHUB_ORG=CodePath-Tech-Exchange-CTEx
+# Detached from the team's shared project/repo on purpose. Fill in your own
+# GCP project + your own fork's owner/name (see PERSONAL_DEPLOY.md) if you
+# want GitHub Actions auto-deploy on your fork. Do not reuse these — they
+# belong to the team's live app and its WIF trust is scoped to the
+# CodePath-Tech-Exchange-CTEx org repo specifically (a fork's OIDC token
+# has a different repository_owner claim, so it couldn't satisfy that trust
+# policy even by accident — but there's no reason to point at it anyway).
+PROJECT_ID=TODO-your-own-gcp-project-id
+PROJECT_NUMBER=TODO-your-own-gcp-project-number
+SERVICE_NAME=TODO-your-own-service-name
+GITHUB_ORG=TODO-your-own-github-username-or-org
 GITHUB_REPO=code-and-conquer
 ### VARIABLES TO CHANGE - END
 
